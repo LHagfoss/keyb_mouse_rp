@@ -1,9 +1,11 @@
-use evdev::{uinput::VirtualDevice, AttributeSet, KeyCode, RelativeAxisCode, InputEvent, Device, EventType};
+use evdev::{
+    AttributeSet, Device, EventType, InputEvent, KeyCode, RelativeAxisCode, uinput::VirtualDevice,
+};
 use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::Read;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::Duration;
 
@@ -44,14 +46,12 @@ pub fn play_macro(delay_ms: i64, speed: f64, no_mouse: bool, no_keyboard: bool) 
         return;
     }
 
-    // Ensure they are sorted chronologically
     events.sort_by_key(|e| e.time_us);
 
-    // Apply filtering for mouse and keyboard events
     let mut filtered_events = Vec::new();
     for event in events {
-        // Event type 1 is EV_KEY. Button codes in mouse range (272 to 287 or BTN_MOUSE = 0x110)
-        let is_mouse = event.event_type == 2 || (event.event_type == 1 && event.code >= 272 && event.code <= 287);
+        let is_mouse = event.event_type == 2
+            || (event.event_type == 1 && event.code >= 272 && event.code <= 287);
         let is_keyboard = event.event_type == 1 && !is_mouse;
 
         if is_mouse && no_mouse {
@@ -60,7 +60,6 @@ pub fn play_macro(delay_ms: i64, speed: f64, no_mouse: bool, no_keyboard: bool) 
         if is_keyboard && no_keyboard {
             continue;
         }
-        // Always allow EV_SYN (0) or other types, unless we are ignoring both
         if event.event_type == 0 && no_mouse && no_keyboard {
             continue;
         }
@@ -78,8 +77,6 @@ pub fn play_macro(delay_ms: i64, speed: f64, no_mouse: bool, no_keyboard: bool) 
     let mut keys = AttributeSet::<KeyCode>::new();
     let mut rel_axes = AttributeSet::<RelativeAxisCode>::new();
 
-    // Always declare standard mouse capabilities so that libinput/OS
-    // correctly categorizes the virtual uinput device as a mouse pointer.
     keys.insert(KeyCode::BTN_LEFT);
     keys.insert(KeyCode::BTN_RIGHT);
     keys.insert(KeyCode::BTN_MIDDLE);
@@ -89,9 +86,9 @@ pub fn play_macro(delay_ms: i64, speed: f64, no_mouse: bool, no_keyboard: bool) 
     rel_axes.insert(RelativeAxisCode::REL_HWHEEL);
 
     for event in &events {
-        if event.event_type == 1 { // EV_KEY
+        if event.event_type == 1 {
             keys.insert(KeyCode(event.code));
-        } else if event.event_type == 2 { // EV_REL
+        } else if event.event_type == 2 {
             rel_axes.insert(RelativeAxisCode(event.code));
         }
     }
@@ -149,7 +146,11 @@ pub fn play_macro(delay_ms: i64, speed: f64, no_mouse: bool, no_keyboard: bool) 
             for entry in entries {
                 if let Ok(entry) = entry {
                     let path = entry.path();
-                    if path.file_name().and_then(|n| n.to_str()).map_or(false, |s| s.starts_with("event")) {
+                    if path
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .map_or(false, |s| s.starts_with("event"))
+                    {
                         if let Ok(device) = Device::open(&path) {
                             let name = device.name().unwrap_or("");
                             // Skip our own virtual device to prevent self-triggering
@@ -177,7 +178,8 @@ pub fn play_macro(delay_ms: i64, speed: f64, no_mouse: bool, no_keyboard: bool) 
                     }
                     if let Ok(events_iter) = dev.fetch_events() {
                         for ev in events_iter {
-                            if ev.event_type().0 == 1 { // EV_KEY
+                            if ev.event_type().0 == 1 {
+                                // EV_KEY
                                 // Code 1 is KEY_ESC, Code 16 is KEY_Q
                                 if ev.value() == 1 && (ev.code() == 1 || ev.code() == 16) {
                                     aborted_inner.store(true, Ordering::SeqCst);
