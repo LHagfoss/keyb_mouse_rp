@@ -379,7 +379,7 @@ fn draw_ui(f: &mut ratatui::Frame, app: &TuiApp) {
         ]));
         details_lines.push(Line::from(vec![
             Span::raw("Path: ").cyan(),
-            Span::raw(sel.path.to_string_lossy().to_string()).dark_gray(),
+            Span::raw(sel.path.to_string_lossy().to_string()).white(),
         ]));
         details_lines.push(Line::from(vec![
             Span::raw("Modified: ").cyan(),
@@ -426,17 +426,76 @@ fn draw_ui(f: &mut ratatui::Frame, app: &TuiApp) {
                 for (i, (code, count)) in analysis.top_keys.iter().enumerate() {
                     let key_name = match code {
                         1 => "ESC",
+                        2 => "1",
+                        3 => "2",
+                        4 => "3",
+                        5 => "4",
+                        6 => "5",
+                        7 => "6",
+                        8 => "7",
+                        9 => "8",
+                        10 => "9",
+                        11 => "0",
+                        12 => "MINUS",
+                        13 => "EQUAL",
+                        14 => "BACKSPACE",
+                        15 => "TAB",
                         16 => "Q",
+                        17 => "W",
+                        18 => "E",
+                        19 => "R",
+                        20 => "T",
+                        21 => "Y",
+                        22 => "U",
+                        23 => "I",
+                        24 => "O",
+                        25 => "P",
+                        26 => "LEFTBRACE",
+                        27 => "RIGHTBRACE",
+                        28 => "ENTER",
+                        29 => "LEFTCTRL",
                         30 => "A",
                         31 => "S",
                         32 => "D",
+                        33 => "F",
+                        34 => "G",
+                        35 => "H",
+                        36 => "J",
+                        37 => "K",
+                        38 => "L",
+                        39 => "SEMICOLON",
+                        40 => "APOSTROPHE",
+                        41 => "GRAVE",
+                        42 => "LEFTSHIFT",
+                        43 => "BACKSLASH",
                         44 => "Z",
                         45 => "X",
+                        46 => "C",
+                        47 => "V",
+                        48 => "B",
+                        49 => "N",
+                        50 => "M",
+                        51 => "COMMA",
+                        52 => "DOT",
+                        53 => "SLASH",
+                        54 => "RIGHTSHIFT",
+                        55 => "KPASTERISK",
+                        56 => "LEFTALT",
                         57 => "SPACE",
-                        28 => "ENTER",
+                        58 => "CAPSLOCK",
+                        59 => "F1",
+                        60 => "F2",
+                        61 => "F3",
+                        62 => "F4",
+                        63 => "F5",
+                        64 => "F6",
+                        65 => "F7",
+                        66 => "F8",
+                        67 => "F9",
+                        68 => "F10",
                         _ => "OTHER",
                     };
-                    details_lines.push(Line::from(format!("  {}. KeyCode {} ({}) pressed {} times", i + 1, code, key_name, count)));
+                    details_lines.push(Line::from(format!("  {}. Key Code {} ({}) pressed {} times", i + 1, code, key_name, count)));
                 }
             }
         } else {
@@ -448,12 +507,16 @@ fn draw_ui(f: &mut ratatui::Frame, app: &TuiApp) {
         details_lines.push(Line::from(vec![
             Span::raw("Speed Multiplier: ").cyan(),
             Span::raw(format!("{:.4}x", app.speed)).bold().green(),
-            Span::raw("  (Press [S] to change)").dark_gray(),
+            Span::raw("  (Press ").yellow(),
+            Span::raw("[S]").green().bold(),
+            Span::raw(" to change)").yellow(),
         ]));
         details_lines.push(Line::from(vec![
             Span::raw("Timeline Delay Shift: ").cyan(),
             Span::raw(format!("{} ms", app.delay_ms)).bold().green(),
-            Span::raw("  (Press [D] to change)").dark_gray(),
+            Span::raw("  (Press ").yellow(),
+            Span::raw("[D]").green().bold(),
+            Span::raw(" to change)").yellow(),
         ]));
     }
     
@@ -471,9 +534,25 @@ fn draw_ui(f: &mut ratatui::Frame, app: &TuiApp) {
         .title(" Controls / Keybinds ".bold().cyan())
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Cyan));
-    let help = Paragraph::new(" [▲/▼] Navigate | [P] Play Select | [R] Record New | [S] Set Speed | [D] Set Delay | [L] Delete | [Q] Quit")
-        .style(Style::default().fg(Color::DarkGray))
-        .block(help_block);
+    
+    let help_line = Line::from(vec![
+        Span::raw(" Navigate: ").cyan().bold(),
+        Span::raw("[▲/▼]").yellow().bold(),
+        Span::raw(" | Play: ").cyan().bold(),
+        Span::raw("[P]").yellow().bold(),
+        Span::raw(" | Record: ").cyan().bold(),
+        Span::raw("[R]").yellow().bold(),
+        Span::raw(" | Speed: ").cyan().bold(),
+        Span::raw("[S]").yellow().bold(),
+        Span::raw(" | Delay: ").cyan().bold(),
+        Span::raw("[D]").yellow().bold(),
+        Span::raw(" | Delete: ").cyan().bold(),
+        Span::raw("[L]").yellow().bold(),
+        Span::raw(" | Quit: ").cyan().bold(),
+        Span::raw("[Q]").yellow().bold(),
+    ]);
+
+    let help = Paragraph::new(help_line).block(help_block);
     f.render_widget(help, chunks[3]);
 
     if app.show_delay_input || app.show_speed_input {
