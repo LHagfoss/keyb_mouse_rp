@@ -43,7 +43,6 @@ enum AppState {
         events: Arc<Mutex<Vec<crate::playback::RecordedEvent>>>,
         recording_flag: Arc<AtomicBool>,
         macro_name: String,
-        handles: Vec<thread::JoinHandle<()>>,
     },
     PlayingCountdown {
         seconds_left: u32,
@@ -353,11 +352,8 @@ pub fn run_tui() -> Result<(), Box<dyn std::error::Error>> {
                             match key.code {
                                 crossterm::event::KeyCode::Esc | crossterm::event::KeyCode::Char('q') | crossterm::event::KeyCode::Char('Q') => {
                                     let old_state = std::mem::replace(&mut app.state, AppState::Dashboard);
-                                    if let AppState::Recording { events, recording_flag, macro_name, handles, .. } = old_state {
+                                    if let AppState::Recording { events, recording_flag, macro_name, .. } = old_state {
                                         recording_flag.store(false, Ordering::SeqCst);
-                                        for h in handles {
-                                            h.join().ok();
-                                        }
 
                                         let mut events_lock = events.lock().unwrap();
                                         events_lock.sort_by_key(|e| e.time_us);
@@ -399,7 +395,7 @@ pub fn run_tui() -> Result<(), Box<dyn std::error::Error>> {
                     *last_tick = std::time::Instant::now();
                     if *seconds_left == 0 {
                         match crate::record::start_background_recording(false, false) {
-                            Ok((events, recording_flag, handles)) => {
+                            Ok((events, recording_flag, _handles)) => {
                                 next_state = Some((
                                     AppState::Recording {
                                         start_time: std::time::Instant::now(),
@@ -407,7 +403,6 @@ pub fn run_tui() -> Result<(), Box<dyn std::error::Error>> {
                                         events,
                                         recording_flag,
                                         macro_name: macro_name.clone(),
-                                        handles,
                                     },
                                     format!("Recording macro '{}'...", macro_name)
                                 ));
