@@ -18,10 +18,11 @@ pub struct RecordedEvent {
 }
 
 pub fn play_macro(delay_ms: i64, speed: f64, no_mouse: bool, no_keyboard: bool) {
+    use colored::Colorize;
     let mut file = match File::open("macro.json") {
         Ok(f) => f,
         Err(_) => {
-            eprintln!("Error: macro.json not found. Run 'cargo run -- record' first");
+            eprintln!("{} macro.json not found. Run 'kmrp record' first.", "Error:".red().bold());
             return;
         }
     };
@@ -29,20 +30,20 @@ pub fn play_macro(delay_ms: i64, speed: f64, no_mouse: bool, no_keyboard: bool) 
     let mut contents = String::new();
 
     if file.read_to_string(&mut contents).is_err() {
-        eprintln!("Error: Failed to read macro.json");
+        eprintln!("{} Failed to read macro.json", "Error:".red().bold());
         return;
     }
 
     let mut events: Vec<RecordedEvent> = match serde_json::from_str(&contents) {
         Ok(events) => events,
         Err(e) => {
-            eprintln!("Error: Failed to parse macro.json: {}", e);
+            eprintln!("{} Failed to parse macro.json: {}", "Error:".red().bold(), e);
             return;
         }
     };
 
     if events.is_empty() {
-        println!("No events to play back.");
+        println!("{}", "No events to play back.".yellow());
         return;
     }
 
@@ -195,9 +196,27 @@ pub fn play_macro(delay_ms: i64, speed: f64, no_mouse: bool, no_keyboard: bool) 
         }
     });
 
-    println!("Playing back {} events in 3 seconds...", events.len());
-    println!("Press physical ESCAPE or Q globally at any time to abort playback.");
-    thread::sleep(Duration::from_secs(3));
+    crate::ui::print_info_box(
+        "MACRO PLAYBACK MODULE",
+        &[
+            format!("{}: {}", "Replaying Events".green().bold(), events.len().to_string().cyan().bold()),
+            format!("{}: {} ms", "Playback Delay".green().bold(), delay_ms.to_string().cyan().bold()),
+            format!("{}: {}x", "Playback Speed".green().bold(), speed.to_string().cyan().bold()),
+            "".to_string(),
+            format!("{}:", "How to Abort".yellow().bold()),
+            "  - Press physical ESCAPE or Q globally at any time.".to_string(),
+            "".to_string(),
+            format!("{}: Initializing virtual output device...", "STATUS".blue().bold()),
+        ],
+    );
+
+    for i in (1..=3).rev() {
+        println!("  [{}] Starting in {}s...", "COUNTDOWN".magenta().bold(), i);
+        thread::sleep(Duration::from_secs(1));
+    }
+    println!();
+    println!("  [{}] {}", "STATUS".green().bold(), "Playing macro events...".bright_green());
+    thread::sleep(Duration::from_millis(500));
 
     let playback_start = std::time::Instant::now();
     let time_us_start = events[0].time_us;
@@ -205,7 +224,7 @@ pub fn play_macro(delay_ms: i64, speed: f64, no_mouse: bool, no_keyboard: bool) 
 
     for event in events {
         if aborted.load(Ordering::SeqCst) {
-            println!("\nPlayback aborted by user.");
+            println!("\n  [{}] Playback aborted by user.", "ABORTED".red().bold());
             break;
         }
 
@@ -230,7 +249,7 @@ pub fn play_macro(delay_ms: i64, speed: f64, no_mouse: bool, no_keyboard: bool) 
         }
 
         if aborted.load(Ordering::SeqCst) {
-            println!("\nPlayback aborted by user.");
+            println!("\n  [{}] Playback aborted by user.", "ABORTED".red().bold());
             break;
         }
 
@@ -240,5 +259,6 @@ pub fn play_macro(delay_ms: i64, speed: f64, no_mouse: bool, no_keyboard: bool) 
         }
     }
 
-    println!("\nPlayback finished.");
+    println!();
+    println!("  [{}] Playback finished.", "SUCCESS".green().bold());
 }

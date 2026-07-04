@@ -21,10 +21,11 @@ pub enum Commands {
     },
     Play {
         /// Offset the replay timeline by this many milliseconds (can be negative to speed up initial lag)
-        #[arg(long, short, default_value_t = 0)]
+        #[arg(long, short, default_value_t = 0, allow_negative_numbers = true)]
         delay: i64,
 
         /// Adjust the playback speed multiplier (e.g., 1.0005 to speed up, 0.9995 to slow down drift, 1.5 for 1.5x speed)
+
         #[arg(long, short, default_value_t = 1.0)]
         speed: f64,
 

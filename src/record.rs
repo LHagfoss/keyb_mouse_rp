@@ -64,27 +64,43 @@ pub fn record_macro(no_mouse: bool, no_keyboard: bool) {
     }
 
     if devices.is_empty() {
+        use colored::Colorize;
         if permission_denied {
-            eprintln!("Permission denied: Cannot access input devices in /dev/input/.");
+            eprintln!("{}", "Error: Permission Denied".red().bold());
+            eprintln!("Cannot access input devices in /dev/input/.");
             eprintln!("Please run this tool with sudo, or add your user to the 'input' group:");
             eprintln!("    sudo usermod -aG input $USER");
             eprintln!(
                 "(Note: You will need to log out and log back in for group changes to take effect.)"
             );
         } else {
+            eprintln!("{}", "Error: No devices found".red().bold());
             eprintln!("No compatible keyboard or mouse input devices found in /dev/input/.");
         }
         return;
     }
 
-    println!("Recording will start in 3 seconds...");
+    use colored::Colorize;
+    crate::ui::print_info_box(
+        "MACRO RECORDING MODULE",
+        &[
+            format!("{}: {}", "Active Devices".green().bold(), devices.len().to_string().cyan().bold()),
+            "".to_string(),
+            format!("{}:", "How to Stop".yellow().bold()),
+            "  - Focus this terminal window.".to_string(),
+            "  - Press ESCAPE or Q inside the terminal window to stop.".to_string(),
+            "".to_string(),
+            format!("{}: Initializing recording input listener...", "STATUS".blue().bold()),
+        ],
+    );
+
     for i in (1..=3).rev() {
-        println!("{}...", i);
+        println!("  [{}] Starting in {}s...", "COUNTDOWN".magenta().bold(), i);
         thread::sleep(Duration::from_secs(1));
     }
+    println!();
+    println!("  [{}] {}", "STATUS".green().bold(), "Recording has started! Type or move mouse now.".bright_green());
 
-    println!("Recording started from {} input devices...", devices.len());
-    println!("FOCUS THIS TERMINAL and press ESCAPE or Q to stop and save.");
 
     let recording = Arc::new(AtomicBool::new(true));
     let mut handles = Vec::new();
@@ -183,10 +199,11 @@ fn trim_exit_events(events: &mut Vec<RecordedEvent>) {
 }
 
 fn save_and_exit(events_lock: &Vec<RecordedEvent>) {
+    use colored::Colorize;
     let json = match serde_json::to_string_pretty(events_lock) {
         Ok(j) => j,
         Err(e) => {
-            eprintln!("Error serializing macro: {}", e);
+            eprintln!("{} {}", "Error serializing macro:".red().bold(), e);
             return;
         }
     };
@@ -195,8 +212,11 @@ fn save_and_exit(events_lock: &Vec<RecordedEvent>) {
     file.write_all(json.as_bytes())
         .expect("Unable to write data");
 
+    println!();
     println!(
-        "\r\nSaved {} events to macro.json. Exiting cleanly.",
-        events_lock.len()
+        "  [{}] Saved {} events to {} successfully!",
+        "SUCCESS".green().bold(),
+        events_lock.len().to_string().cyan().bold(),
+        "macro.json".yellow().bold()
     );
 }
