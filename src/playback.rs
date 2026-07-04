@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::Read;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering, AtomicUsize};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::thread;
 use std::time::Duration;
 
@@ -22,18 +22,22 @@ pub fn start_background_playback(
     delay_ms: i64,
     speed: f64,
     no_mouse: bool,
-    no_keyboard: bool
-) -> Result<(
-    Arc<AtomicBool>, // playing flag
-    Arc<AtomicUsize>, // current event index
-    Arc<AtomicBool>, // abort flag
-    usize, // total events
-    thread::JoinHandle<()>
-), String> {
+    no_keyboard: bool,
+) -> Result<
+    (
+        Arc<AtomicBool>,  // playing flag
+        Arc<AtomicUsize>, // current event index
+        Arc<AtomicBool>,  // abort flag
+        usize,            // total events
+        thread::JoinHandle<()>,
+    ),
+    String,
+> {
     let path = crate::storage::get_macro_path(&name_str);
     let mut file = File::open(&path).map_err(|_| format!("File {:?} not found.", path))?;
     let mut contents = String::new();
-    file.read_to_string(&mut contents).map_err(|e| format!("Failed to read file: {}", e))?;
+    file.read_to_string(&mut contents)
+        .map_err(|e| format!("Failed to read file: {}", e))?;
 
     let mut events: Vec<RecordedEvent> = serde_json::from_str(&contents)
         .map_err(|e| format!("Failed to parse macro file: {}", e))?;
@@ -130,7 +134,11 @@ pub fn start_background_playback(
             for entry in entries {
                 if let Ok(entry) = entry {
                     let path = entry.path();
-                    if path.file_name().and_then(|n| n.to_str()).map_or(false, |s| s.starts_with("event")) {
+                    if path
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .map_or(false, |s| s.starts_with("event"))
+                    {
                         if let Ok(device) = Device::open(&path) {
                             let name = device.name().unwrap_or("");
                             if name == "Virtual Macro Device" {
@@ -209,33 +217,50 @@ pub fn start_background_playback(
             if let Err(e) = virtual_device.emit(&[ev]) {
                 eprintln!("Failed to simulate event: {:?}", e);
             }
-            
+
             current_clone.store(idx + 1, Ordering::SeqCst);
         }
 
         playing_clone.store(false, Ordering::SeqCst);
     });
 
-    Ok((playing_flag, current_event, abort_flag, total_events, playback_handle))
+    Ok((
+        playing_flag,
+        current_event,
+        abort_flag,
+        total_events,
+        playback_handle,
+    ))
 }
 
-pub fn play_macro(name: Option<String>, delay_ms: i64, speed: f64, no_mouse: bool, no_keyboard: bool) {
+pub fn play_macro(
+    name: Option<String>,
+    delay_ms: i64,
+    speed: f64,
+    no_mouse: bool,
+    no_keyboard: bool,
+) {
     use colored::Colorize;
-    
+
     let name_str = match name {
         Some(n) => n,
-        None => {
-            match crate::storage::get_latest_macro() {
-                Some(latest) => {
-                    println!("  [{}] Playing most recent macro: {}", "INFO".blue().bold(), latest.yellow().bold());
-                    latest
-                }
-                None => {
-                    eprintln!("{} No saved macros found. Run 'kmrp record' first.", "Error:".red().bold());
-                    return;
-                }
+        None => match crate::storage::get_latest_macro() {
+            Some(latest) => {
+                println!(
+                    "  [{}] Playing most recent macro: {}",
+                    "INFO".blue().bold(),
+                    latest.yellow().bold()
+                );
+                latest
             }
-        }
+            None => {
+                eprintln!(
+                    "{} No saved macros found. Run 'kmrp record' first.",
+                    "Error:".red().bold()
+                );
+                return;
+            }
+        },
     };
 
     let path = crate::storage::get_macro_path(&name_str);
@@ -257,7 +282,12 @@ pub fn play_macro(name: Option<String>, delay_ms: i64, speed: f64, no_mouse: boo
     let mut events: Vec<RecordedEvent> = match serde_json::from_str(&contents) {
         Ok(events) => events,
         Err(e) => {
-            eprintln!("{} Failed to parse file {:?}: {}", "Error:".red().bold(), path, e);
+            eprintln!(
+                "{} Failed to parse file {:?}: {}",
+                "Error:".red().bold(),
+                path,
+                e
+            );
             return;
         }
     };
@@ -291,7 +321,10 @@ pub fn play_macro(name: Option<String>, delay_ms: i64, speed: f64, no_mouse: boo
     let events = filtered_events;
 
     if events.is_empty() {
-        println!("{}", "No events left to play back after filtering.".yellow());
+        println!(
+            "{}",
+            "No events left to play back after filtering.".yellow()
+        );
         return;
     }
 
@@ -334,7 +367,11 @@ pub fn play_macro(name: Option<String>, delay_ms: i64, speed: f64, no_mouse: boo
         builder = match builder.with_keys(&keys) {
             Ok(b) => b,
             Err(e) => {
-                eprintln!("{} Configuring virtual keys: {:?}", "Error:".red().bold(), e);
+                eprintln!(
+                    "{} Configuring virtual keys: {:?}",
+                    "Error:".red().bold(),
+                    e
+                );
                 return;
             }
         };
@@ -423,15 +460,30 @@ pub fn play_macro(name: Option<String>, delay_ms: i64, speed: f64, no_mouse: boo
     crate::ui::print_info_box(
         "MACRO PLAYBACK MODULE",
         &[
-            format!("{}: {}", "Macro File", path.to_string_lossy().yellow().bold()),
-            format!("{}: {}", "Total Events", events.len().to_string().cyan().bold()),
+            format!(
+                "{}: {}",
+                "Macro File",
+                path.to_string_lossy().yellow().bold()
+            ),
+            format!(
+                "{}: {}",
+                "Total Events",
+                events.len().to_string().cyan().bold()
+            ),
             format!("{}: {}x", "Speed Scale", speed.to_string().cyan().bold()),
-            format!("{}: {}ms", "Delay Shift", delay_ms.to_string().cyan().bold()),
+            format!(
+                "{}: {}ms",
+                "Delay Shift",
+                delay_ms.to_string().cyan().bold()
+            ),
             "".to_string(),
             format!("{}:", "How to Abort".yellow().bold()),
             "  - Press physical ESCAPE or Q globally at any time.".to_string(),
             "".to_string(),
-            format!("{}: Initializing virtual output device...", "STATUS".blue().bold()),
+            format!(
+                "{}: Initializing virtual output device...",
+                "STATUS".blue().bold()
+            ),
         ],
     );
 
@@ -440,7 +492,11 @@ pub fn play_macro(name: Option<String>, delay_ms: i64, speed: f64, no_mouse: boo
         thread::sleep(Duration::from_secs(1));
     }
     println!();
-    println!("  [{}] {}", "STATUS".green().bold(), "Playing macro events...".bright_green());
+    println!(
+        "  [{}] {}",
+        "STATUS".green().bold(),
+        "Playing macro events...".bright_green()
+    );
     thread::sleep(Duration::from_millis(500));
 
     let playback_start = std::time::Instant::now();

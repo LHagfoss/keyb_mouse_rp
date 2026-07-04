@@ -45,7 +45,7 @@ fn visible_length(s: &str) -> usize {
 pub fn print_info_box(title: &str, lines: &[String]) {
     let width = 64;
     println!("{}", format!("{}{}{}", "┌".cyan().bold(), "─".repeat(width - 2).cyan().bold(), "┐".cyan().bold()));
-    
+
     // Title row centered
     let title_str = format!(" {} ", title);
     let title_len = title_str.len();
@@ -58,9 +58,9 @@ pub fn print_info_box(title: &str, lines: &[String]) {
         title_str.yellow().bold(),
         " ".repeat(right_pad)
     );
-    
+
     println!("{}", format!("{}{}{}", "├".cyan().bold(), "─".repeat(width - 2).cyan().bold(), "┤".cyan().bold()));
-    
+
     for line in lines {
         let vis_len = visible_length(line);
         let pad = if width - 2 > vis_len {
@@ -68,14 +68,14 @@ pub fn print_info_box(title: &str, lines: &[String]) {
         } else {
             0
         };
-        
+
         // Split line and padding spaces
         let padding_spaces = if pad > 1 {
             " ".repeat(pad - 1)
         } else {
             "".to_string()
         };
-        
+
         println!(
             "{} {}{} {}",
             "│".cyan().bold(),

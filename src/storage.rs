@@ -1,5 +1,5 @@
-use std::path::PathBuf;
 use colored::Colorize;
+use std::path::PathBuf;
 
 pub fn get_macro_dir() -> PathBuf {
     // If run under sudo, SUDO_USER contains the original invoking user
@@ -12,12 +12,12 @@ pub fn get_macro_dir() -> PathBuf {
     } else {
         PathBuf::from(format!("/home/{}/.local/share/kmrp", user))
     };
-    
+
     // Ensure the directory exists
     if !path.exists() {
         std::fs::create_dir_all(&path).ok();
     }
-    
+
     path
 }
 
@@ -71,12 +71,18 @@ pub fn get_latest_macro() -> Option<String> {
     // Sort by modified time descending
     files.sort_by(|a, b| b.1.cmp(&a.1));
 
-    files.first().map(|f| f.0.file_name().unwrap().to_string_lossy().into_owned())
+    files
+        .first()
+        .map(|f| f.0.file_name().unwrap().to_string_lossy().into_owned())
 }
 
 pub fn list_macros() {
     let dir = get_macro_dir();
-    println!("  [{}] Saved macros in {}:", "INFO".blue().bold(), dir.to_string_lossy().yellow().bold());
+    println!(
+        "  [{}] Saved macros in {}:",
+        "INFO".blue().bold(),
+        dir.to_string_lossy().yellow().bold()
+    );
 
     let entries = match std::fs::read_dir(&dir) {
         Ok(e) => e,
@@ -109,7 +115,12 @@ pub fn list_macros() {
     files.sort_by(|a, b| b.1.cmp(&a.1));
 
     println!();
-    println!("  {:<35} {:<25} {:<10}", "Macro Name".cyan().bold(), "Last Modified".cyan().bold(), "Size".cyan().bold());
+    println!(
+        "  {:<35} {:<25} {:<10}",
+        "Macro Name".cyan().bold(),
+        "Last Modified".cyan().bold(),
+        "Size".cyan().bold()
+    );
     println!("  {}", "─".repeat(74).cyan());
 
     for (path, modified, size) in files {
@@ -122,6 +133,11 @@ pub fn list_macros() {
         };
 
         let size_str = format!("{:.2} KB", size as f64 / 1024.0);
-        println!("  {:<35} {:<25} {:<10}", name.yellow().bold(), date_str, size_str);
+        println!(
+            "  {:<35} {:<25} {:<10}",
+            name.yellow().bold(),
+            date_str,
+            size_str
+        );
     }
 }

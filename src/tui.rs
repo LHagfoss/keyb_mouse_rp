@@ -1,14 +1,14 @@
 use ratatui::{
+    Terminal,
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout},
     style::{Color, Style, Stylize},
     text::{Line, Span},
     widgets::{Block, Borders, List, ListItem, Paragraph, Wrap},
-    Terminal,
 };
 use std::fs::File;
 use std::io::Read;
-use std::sync::atomic::{AtomicBool, Ordering, AtomicUsize};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
@@ -84,7 +84,8 @@ impl TuiApp {
             show_delay_input: false,
             show_speed_input: false,
             input_value: String::new(),
-            status_msg: "Welcome to kmrp! Select a macro and press [P] to play or [R] to record.".to_string(),
+            status_msg: "Welcome to kmrp! Select a macro and press [P] to play or [R] to record."
+                .to_string(),
             should_quit: false,
             cached_analysis: None,
             state: AppState::Dashboard,
@@ -110,10 +111,10 @@ impl TuiApp {
                     }
                 }
             }
-            
+
             // Sort by modified time descending
             temp_files.sort_by(|a, b| b.1.cmp(&a.1));
-            
+
             for (path, modified, size) in temp_files {
                 let name = path.file_stem().unwrap().to_string_lossy().into_owned();
                 let modified_str = if let Some(m) = modified {
@@ -131,7 +132,7 @@ impl TuiApp {
                 });
             }
         }
-        
+
         if self.selected_index >= self.macros.len() && !self.macros.is_empty() {
             self.selected_index = self.macros.len() - 1;
         }
@@ -142,32 +143,38 @@ impl TuiApp {
         if self.macros.is_empty() || self.selected_index >= self.macros.len() {
             return;
         }
-        
+
         let path = &self.macros[self.selected_index].path;
         if let Ok(mut file) = File::open(path) {
             let mut contents = String::new();
             if file.read_to_string(&mut contents).is_ok() {
-                if let Ok(events) = serde_json::from_str::<Vec<crate::playback::RecordedEvent>>(&contents) {
+                if let Ok(events) =
+                    serde_json::from_str::<Vec<crate::playback::RecordedEvent>>(&contents)
+                {
                     if events.is_empty() {
                         return;
                     }
                     let total_events = events.len();
-                    
+
                     let mut sorted = events.clone();
                     sorted.sort_by_key(|e| e.time_us);
-                    let duration_secs = (sorted.last().unwrap().time_us - sorted.first().unwrap().time_us) as f64 / 1_000_000.0;
-                    
+                    let duration_secs =
+                        (sorted.last().unwrap().time_us - sorted.first().unwrap().time_us) as f64
+                            / 1_000_000.0;
+
                     let mut mouse_moves = 0;
                     let mut mouse_clicks = 0;
                     let mut key_presses = 0;
-                    
+
                     use std::collections::HashMap;
                     let mut key_counts = HashMap::new();
-                    
+
                     for ev in &events {
-                        if ev.event_type == 2 { // EV_REL
+                        if ev.event_type == 2 {
+                            // EV_REL
                             mouse_moves += 1;
-                        } else if ev.event_type == 1 { // EV_KEY
+                        } else if ev.event_type == 1 {
+                            // EV_KEY
                             let is_mouse_btn = ev.code >= 272 && ev.code <= 287;
                             if is_mouse_btn {
                                 if ev.value == 1 {
@@ -181,11 +188,11 @@ impl TuiApp {
                             }
                         }
                     }
-                    
+
                     let mut top_keys: Vec<(u16, usize)> = key_counts.into_iter().collect();
                     top_keys.sort_by(|a, b| b.1.cmp(&a.1));
                     top_keys.truncate(3);
-                    
+
                     self.cached_analysis = Some(MacroAnalysis {
                         total_events,
                         duration_secs,
@@ -203,7 +210,11 @@ impl TuiApp {
 pub fn run_tui() -> Result<(), Box<dyn std::error::Error>> {
     crossterm::terminal::enable_raw_mode()?;
     let mut stdout = std::io::stdout();
-    crossterm::execute!(stdout, crossterm::terminal::EnterAlternateScreen, crossterm::event::EnableMouseCapture)?;
+    crossterm::execute!(
+        stdout,
+        crossterm::terminal::EnterAlternateScreen,
+        crossterm::event::EnableMouseCapture
+    )?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
@@ -224,21 +235,28 @@ pub fn run_tui() -> Result<(), Box<dyn std::error::Error>> {
                                         if app.show_delay_input {
                                             if let Ok(val) = app.input_value.parse::<i64>() {
                                                 app.delay_ms = val;
-                                                app.status_msg = format!("Delay offset set to {} ms", val);
+                                                app.status_msg =
+                                                    format!("Delay offset set to {} ms", val);
                                             } else {
-                                                app.status_msg = "Invalid delay integer value.".to_string();
+                                                app.status_msg =
+                                                    "Invalid delay integer value.".to_string();
                                             }
                                             app.show_delay_input = false;
                                         } else if app.show_speed_input {
                                             if let Ok(val) = app.input_value.parse::<f64>() {
                                                 if val > 0.0 {
                                                     app.speed = val;
-                                                    app.status_msg = format!("Playback speed scale set to {}x", val);
+                                                    app.status_msg = format!(
+                                                        "Playback speed scale set to {}x",
+                                                        val
+                                                    );
                                                 } else {
-                                                    app.status_msg = "Speed must be greater than 0.".to_string();
+                                                    app.status_msg =
+                                                        "Speed must be greater than 0.".to_string();
                                                 }
                                             } else {
-                                                app.status_msg = "Invalid speed decimal value.".to_string();
+                                                app.status_msg =
+                                                    "Invalid speed decimal value.".to_string();
                                             }
                                             app.show_speed_input = false;
                                         }
@@ -259,7 +277,8 @@ pub fn run_tui() -> Result<(), Box<dyn std::error::Error>> {
                                 }
                             } else {
                                 match key.code {
-                                    crossterm::event::KeyCode::Char('q') | crossterm::event::KeyCode::Char('Q') => {
+                                    crossterm::event::KeyCode::Char('q')
+                                    | crossterm::event::KeyCode::Char('Q') => {
                                         app.should_quit = true;
                                     }
                                     crossterm::event::KeyCode::Up => {
@@ -269,19 +288,27 @@ pub fn run_tui() -> Result<(), Box<dyn std::error::Error>> {
                                         }
                                     }
                                     crossterm::event::KeyCode::Down => {
-                                        if !app.macros.is_empty() && app.selected_index < app.macros.len() - 1 {
+                                        if !app.macros.is_empty()
+                                            && app.selected_index < app.macros.len() - 1
+                                        {
                                             app.selected_index += 1;
                                             app.update_analysis();
                                         }
                                     }
-                                    crossterm::event::KeyCode::Char('r') | crossterm::event::KeyCode::Char('R') => {
+                                    crossterm::event::KeyCode::Char('r')
+                                    | crossterm::event::KeyCode::Char('R') => {
                                         app.state = AppState::InputMacroName;
                                         app.input_value = String::new();
-                                        app.status_msg = "Enter macro name and press [Enter].".to_string();
+                                        app.status_msg =
+                                            "Enter macro name and press [Enter].".to_string();
                                     }
-                                    crossterm::event::KeyCode::Char('p') | crossterm::event::KeyCode::Char('P') => {
-                                        if !app.macros.is_empty() && app.selected_index < app.macros.len() {
-                                            let macro_name = app.macros[app.selected_index].name.clone();
+                                    crossterm::event::KeyCode::Char('p')
+                                    | crossterm::event::KeyCode::Char('P') => {
+                                        if !app.macros.is_empty()
+                                            && app.selected_index < app.macros.len()
+                                        {
+                                            let macro_name =
+                                                app.macros[app.selected_index].name.clone();
                                             app.state = AppState::PlayingCountdown {
                                                 seconds_left: 3,
                                                 last_tick: std::time::Instant::now(),
@@ -289,25 +316,35 @@ pub fn run_tui() -> Result<(), Box<dyn std::error::Error>> {
                                             };
                                         }
                                     }
-                                    crossterm::event::KeyCode::Char('d') | crossterm::event::KeyCode::Char('D') => {
+                                    crossterm::event::KeyCode::Char('d')
+                                    | crossterm::event::KeyCode::Char('D') => {
                                         app.show_delay_input = true;
                                         app.input_value = app.delay_ms.to_string();
                                     }
-                                    crossterm::event::KeyCode::Char('s') | crossterm::event::KeyCode::Char('S') => {
+                                    crossterm::event::KeyCode::Char('s')
+                                    | crossterm::event::KeyCode::Char('S') => {
                                         app.show_speed_input = true;
                                         app.input_value = app.speed.to_string();
                                     }
-                                    crossterm::event::KeyCode::Char('l') | crossterm::event::KeyCode::Char('L') => {
-                                        if !app.macros.is_empty() && app.selected_index < app.macros.len() {
-                                            let macro_name = app.macros[app.selected_index].name.clone();
+                                    crossterm::event::KeyCode::Char('l')
+                                    | crossterm::event::KeyCode::Char('L') => {
+                                        if !app.macros.is_empty()
+                                            && app.selected_index < app.macros.len()
+                                        {
+                                            let macro_name =
+                                                app.macros[app.selected_index].name.clone();
                                             let path = app.macros[app.selected_index].path.clone();
-                                            
+
                                             if std::fs::remove_file(&path).is_ok() {
-                                                app.status_msg = format!("Deleted macro '{}'", macro_name);
+                                                app.status_msg =
+                                                    format!("Deleted macro '{}'", macro_name);
                                             } else {
-                                                app.status_msg = format!("Failed to delete macro '{}'", macro_name);
+                                                app.status_msg = format!(
+                                                    "Failed to delete macro '{}'",
+                                                    macro_name
+                                                );
                                             }
-                                            
+
                                             app.refresh_macros();
                                             app.update_analysis();
                                         }
@@ -316,69 +353,78 @@ pub fn run_tui() -> Result<(), Box<dyn std::error::Error>> {
                                 }
                             }
                         }
-                        AppState::InputMacroName => {
-                            match key.code {
-                                crossterm::event::KeyCode::Enter => {
-                                    let name_trimmed = app.input_value.trim().to_string();
-                                    let macro_name = if name_trimmed.is_empty() {
-                                        let datetime = chrono::Local::now().format("%Y%m%d_%H%M%S").to_string();
-                                        format!("macro_{}", datetime)
-                                    } else {
-                                        name_trimmed
-                                    };
-                                    app.state = AppState::RecordingCountdown {
-                                        seconds_left: 3,
-                                        last_tick: std::time::Instant::now(),
-                                        macro_name,
-                                    };
-                                    app.status_msg = "Preparing background threads for recording...".to_string();
-                                }
-                                crossterm::event::KeyCode::Esc => {
-                                    app.state = AppState::Dashboard;
-                                    app.status_msg = "Cancelled naming. Returned to dashboard.".to_string();
-                                }
-                                crossterm::event::KeyCode::Backspace => {
-                                    app.input_value.pop();
-                                }
-                                crossterm::event::KeyCode::Char(c) => {
-                                    if c.is_alphanumeric() || c == '_' || c == '-' {
-                                        app.input_value.push(c);
-                                    }
-                                }
-                                _ => {}
+                        AppState::InputMacroName => match key.code {
+                            crossterm::event::KeyCode::Enter => {
+                                let name_trimmed = app.input_value.trim().to_string();
+                                let macro_name = if name_trimmed.is_empty() {
+                                    let datetime =
+                                        chrono::Local::now().format("%Y%m%d_%H%M%S").to_string();
+                                    format!("macro_{}", datetime)
+                                } else {
+                                    name_trimmed
+                                };
+                                app.state = AppState::RecordingCountdown {
+                                    seconds_left: 3,
+                                    last_tick: std::time::Instant::now(),
+                                    macro_name,
+                                };
+                                app.status_msg =
+                                    "Preparing background threads for recording...".to_string();
                             }
-                        }
-                        AppState::Recording { .. } => {
-                            match key.code {
-                                crossterm::event::KeyCode::Esc | crossterm::event::KeyCode::Char('q') | crossterm::event::KeyCode::Char('Q') => {
-                                    let old_state = std::mem::replace(&mut app.state, AppState::Dashboard);
-                                    if let AppState::Recording { events, recording_flag, macro_name, .. } = old_state {
-                                        recording_flag.store(false, Ordering::SeqCst);
-
-                                        let mut events_lock = events.lock().unwrap();
-                                        events_lock.sort_by_key(|e| e.time_us);
-                                        crate::record::trim_exit_events(&mut events_lock);
-
-                                        let save_path = crate::storage::get_macro_path(&macro_name);
-                                        crate::record::save_and_exit(&events_lock, &save_path);
-
-                                        app.status_msg = format!("Macro '{}' saved successfully!", macro_name);
-                                        app.refresh_macros();
-                                        app.update_analysis();
-                                    }
-                                }
-                                _ => {}
+                            crossterm::event::KeyCode::Esc => {
+                                app.state = AppState::Dashboard;
+                                app.status_msg =
+                                    "Cancelled naming. Returned to dashboard.".to_string();
                             }
-                        }
-                        AppState::Playing { aborted_flag, .. } => {
-                            match key.code {
-                                crossterm::event::KeyCode::Esc | crossterm::event::KeyCode::Char('q') | crossterm::event::KeyCode::Char('Q') => {
-                                    aborted_flag.store(true, Ordering::SeqCst);
-                                    app.status_msg = "Playback abort requested by user.".to_string();
-                                }
-                                _ => {}
+                            crossterm::event::KeyCode::Backspace => {
+                                app.input_value.pop();
                             }
-                        }
+                            crossterm::event::KeyCode::Char(c) => {
+                                if c.is_alphanumeric() || c == '_' || c == '-' {
+                                    app.input_value.push(c);
+                                }
+                            }
+                            _ => {}
+                        },
+                        AppState::Recording { .. } => match key.code {
+                            crossterm::event::KeyCode::Esc
+                            | crossterm::event::KeyCode::Char('q')
+                            | crossterm::event::KeyCode::Char('Q') => {
+                                let old_state =
+                                    std::mem::replace(&mut app.state, AppState::Dashboard);
+                                if let AppState::Recording {
+                                    events,
+                                    recording_flag,
+                                    macro_name,
+                                    ..
+                                } = old_state
+                                {
+                                    recording_flag.store(false, Ordering::SeqCst);
+
+                                    let mut events_lock = events.lock().unwrap();
+                                    events_lock.sort_by_key(|e| e.time_us);
+                                    crate::record::trim_exit_events(&mut events_lock);
+
+                                    let save_path = crate::storage::get_macro_path(&macro_name);
+                                    crate::record::save_and_exit(&events_lock, &save_path);
+
+                                    app.status_msg =
+                                        format!("Macro '{}' saved successfully!", macro_name);
+                                    app.refresh_macros();
+                                    app.update_analysis();
+                                }
+                            }
+                            _ => {}
+                        },
+                        AppState::Playing { aborted_flag, .. } => match key.code {
+                            crossterm::event::KeyCode::Esc
+                            | crossterm::event::KeyCode::Char('q')
+                            | crossterm::event::KeyCode::Char('Q') => {
+                                aborted_flag.store(true, Ordering::SeqCst);
+                                app.status_msg = "Playback abort requested by user.".to_string();
+                            }
+                            _ => {}
+                        },
                         _ => {}
                     }
                 }
@@ -389,7 +435,11 @@ pub fn run_tui() -> Result<(), Box<dyn std::error::Error>> {
         let mut next_state = None;
 
         match &mut app.state {
-            AppState::RecordingCountdown { seconds_left, last_tick, macro_name } => {
+            AppState::RecordingCountdown {
+                seconds_left,
+                last_tick,
+                macro_name,
+            } => {
                 if last_tick.elapsed() >= Duration::from_secs(1) {
                     *seconds_left -= 1;
                     *last_tick = std::time::Instant::now();
@@ -404,26 +454,40 @@ pub fn run_tui() -> Result<(), Box<dyn std::error::Error>> {
                                         recording_flag,
                                         macro_name: macro_name.clone(),
                                     },
-                                    format!("Recording macro '{}'...", macro_name)
+                                    format!("Recording macro '{}'...", macro_name),
                                 ));
                             }
                             Err(e) => {
-                                next_state = Some((
-                                    AppState::Dashboard,
-                                    format!("Recording error: {}", e)
-                                ));
+                                next_state =
+                                    Some((AppState::Dashboard, format!("Recording error: {}", e)));
                             }
                         }
                     }
                 }
             }
-            AppState::PlayingCountdown { seconds_left, last_tick, macro_name } => {
+            AppState::PlayingCountdown {
+                seconds_left,
+                last_tick,
+                macro_name,
+            } => {
                 if last_tick.elapsed() >= Duration::from_secs(1) {
                     *seconds_left -= 1;
                     *last_tick = std::time::Instant::now();
                     if *seconds_left == 0 {
-                        match crate::playback::start_background_playback(macro_name.clone(), app.delay_ms, app.speed, false, false) {
-                            Ok((playing_flag, current_event, aborted_flag, total_events, handle)) => {
+                        match crate::playback::start_background_playback(
+                            macro_name.clone(),
+                            app.delay_ms,
+                            app.speed,
+                            false,
+                            false,
+                        ) {
+                            Ok((
+                                playing_flag,
+                                current_event,
+                                aborted_flag,
+                                total_events,
+                                handle,
+                            )) => {
                                 next_state = Some((
                                     AppState::Playing {
                                         start_time: std::time::Instant::now(),
@@ -434,25 +498,31 @@ pub fn run_tui() -> Result<(), Box<dyn std::error::Error>> {
                                         macro_name: macro_name.clone(),
                                         _handle: handle,
                                     },
-                                    format!("Playing macro '{}'...", macro_name)
+                                    format!("Playing macro '{}'...", macro_name),
                                 ));
                             }
                             Err(e) => {
-                                next_state = Some((
-                                    AppState::Dashboard,
-                                    format!("Playback error: {}", e)
-                                ));
+                                next_state =
+                                    Some((AppState::Dashboard, format!("Playback error: {}", e)));
                             }
                         }
                     }
                 }
             }
-            AppState::Recording { event_count, events, .. } => {
+            AppState::Recording {
+                event_count,
+                events,
+                ..
+            } => {
                 if let Ok(lock) = events.lock() {
                     event_count.store(lock.len(), Ordering::SeqCst);
                 }
             }
-            AppState::Playing { playing_flag, aborted_flag, .. } => {
+            AppState::Playing {
+                playing_flag,
+                aborted_flag,
+                ..
+            } => {
                 if !playing_flag.load(Ordering::SeqCst) {
                     let aborted = aborted_flag.load(Ordering::SeqCst);
                     let msg = if aborted {
@@ -481,7 +551,11 @@ pub fn run_tui() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     crossterm::terminal::disable_raw_mode()?;
-    crossterm::execute!(terminal.backend_mut(), crossterm::terminal::LeaveAlternateScreen, crossterm::event::DisableMouseCapture)?;
+    crossterm::execute!(
+        terminal.backend_mut(),
+        crossterm::terminal::LeaveAlternateScreen,
+        crossterm::event::DisableMouseCapture
+    )?;
     terminal.show_cursor()?;
 
     Ok(())
@@ -495,14 +569,37 @@ fn draw_ui(f: &mut ratatui::Frame, app: &TuiApp) {
         AppState::RecordingCountdown { seconds_left, .. } => {
             draw_countdown_screen(f, "RECORDING COUNTDOWN", *seconds_left);
         }
-        AppState::Recording { start_time, event_count, macro_name, .. } => {
-            draw_recording_screen(f, start_time.elapsed(), event_count.load(Ordering::SeqCst), macro_name);
+        AppState::Recording {
+            start_time,
+            event_count,
+            macro_name,
+            ..
+        } => {
+            draw_recording_screen(
+                f,
+                start_time.elapsed(),
+                event_count.load(Ordering::SeqCst),
+                macro_name,
+            );
         }
         AppState::PlayingCountdown { seconds_left, .. } => {
             draw_countdown_screen(f, "PLAYBACK COUNTDOWN", *seconds_left);
         }
-        AppState::Playing { start_time, current_event, total_events, macro_name, .. } => {
-            draw_playback_screen(f, start_time.elapsed(), current_event.load(Ordering::SeqCst), *total_events, macro_name, app);
+        AppState::Playing {
+            start_time,
+            current_event,
+            total_events,
+            macro_name,
+            ..
+        } => {
+            draw_playback_screen(
+                f,
+                start_time.elapsed(),
+                current_event.load(Ordering::SeqCst),
+                *total_events,
+                macro_name,
+                app,
+            );
         }
     }
 }
@@ -521,7 +618,11 @@ fn draw_dashboard(f: &mut ratatui::Frame, app: &TuiApp) {
     let header = Paragraph::new(" KMRP - HIGH PRECISION INPUT MACRO DASHBOARD ")
         .style(Style::default().fg(Color::Cyan).bold())
         .alignment(ratatui::layout::Alignment::Center)
-        .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(Color::Cyan)));
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Cyan)),
+        );
     f.render_widget(header, chunks[0]);
 
     let main_chunks = Layout::default()
@@ -535,13 +636,18 @@ fn draw_dashboard(f: &mut ratatui::Frame, app: &TuiApp) {
     let mut list_items = Vec::new();
     for (i, m) in app.macros.iter().enumerate() {
         let style = if i == app.selected_index {
-            Style::default().fg(Color::Yellow).bold().bg(Color::Rgb(40, 40, 40))
+            Style::default()
+                .fg(Color::Yellow)
+                .bold()
+                .bg(Color::Rgb(40, 40, 40))
         } else {
             Style::default().fg(Color::White)
         };
-        list_items.push(ListItem::new(format!(" 📁 {:<24} [{:>8.2} KB]", m.name, m.size_kb)).style(style));
+        list_items.push(
+            ListItem::new(format!(" 📁 {:<24} [{:>8.2} KB]", m.name, m.size_kb)).style(style),
+        );
     }
-    
+
     let list_title = format!(" Macros ({}) ", app.macros.len());
     let list_block = Block::default()
         .title(list_title.bold().cyan())
@@ -554,10 +660,12 @@ fn draw_dashboard(f: &mut ratatui::Frame, app: &TuiApp) {
         .title(" Selected Macro Details & Analysis ".bold().cyan())
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Cyan));
-        
+
     let mut details_lines = Vec::new();
     if app.macros.is_empty() || app.selected_index >= app.macros.len() {
-        details_lines.push(Line::from("No macros saved yet. Press [R] to record a new macro."));
+        details_lines.push(Line::from(
+            "No macros saved yet. Press [R] to record a new macro.",
+        ));
     } else {
         let sel = &app.macros[app.selected_index];
         details_lines.push(Line::from(vec![
@@ -576,37 +684,43 @@ fn draw_dashboard(f: &mut ratatui::Frame, app: &TuiApp) {
             Span::raw("File Size: ").cyan(),
             Span::raw(format!("{:.2} KB", sel.size_kb)),
         ]));
-        
+
         details_lines.push(Line::from(""));
-        details_lines.push(Line::from("───── ANALYSIS ──────────────────────────────────────".cyan()));
-        
+        details_lines.push(Line::from(
+            "───── ANALYSIS ──────────────────────────────────────".cyan(),
+        ));
+
         if let Some(analysis) = &app.cached_analysis {
             details_lines.push(Line::from(vec![
                 Span::raw("Total Events: ").cyan(),
                 Span::raw(analysis.total_events.to_string()).bold().green(),
             ]));
-            
+
             let duration_min = (analysis.duration_secs / 60.0).floor() as u32;
             let duration_sec = (analysis.duration_secs % 60.0).round() as u32;
             details_lines.push(Line::from(vec![
                 Span::raw("Playback Duration: ").cyan(),
-                Span::raw(format!("{:02}:{:02}", duration_min, duration_sec)).bold().yellow(),
+                Span::raw(format!("{:02}:{:02}", duration_min, duration_sec))
+                    .bold()
+                    .yellow(),
                 Span::raw(format!(" ({:.2} seconds)", analysis.duration_secs)).dark_gray(),
             ]));
-            
+
             details_lines.push(Line::from(vec![
                 Span::raw("Mouse Move Events (EV_REL): ").cyan(),
                 Span::raw(analysis.mouse_moves.to_string()).bold().magenta(),
             ]));
             details_lines.push(Line::from(vec![
                 Span::raw("Mouse Clicks (BTN_MOUSE): ").cyan(),
-                Span::raw(analysis.mouse_clicks.to_string()).bold().magenta(),
+                Span::raw(analysis.mouse_clicks.to_string())
+                    .bold()
+                    .magenta(),
             ]));
             details_lines.push(Line::from(vec![
                 Span::raw("Keyboard Keypresses: ").cyan(),
                 Span::raw(analysis.key_presses.to_string()).bold().blue(),
             ]));
-            
+
             if !analysis.top_keys.is_empty() {
                 details_lines.push(Line::from(""));
                 details_lines.push(Line::from("Top Keyboard Keys Pressed:".cyan().bold()));
@@ -682,15 +796,25 @@ fn draw_dashboard(f: &mut ratatui::Frame, app: &TuiApp) {
                         68 => "F10",
                         _ => "OTHER",
                     };
-                    details_lines.push(Line::from(format!("  {}. Key Code {} ({}) pressed {} times", i + 1, code, key_name, count)));
+                    details_lines.push(Line::from(format!(
+                        "  {}. Key Code {} ({}) pressed {} times",
+                        i + 1,
+                        code,
+                        key_name,
+                        count
+                    )));
                 }
             }
         } else {
-            details_lines.push(Line::from("Parsing and analyzing macro file...".dark_gray()));
+            details_lines.push(Line::from(
+                "Parsing and analyzing macro file...".dark_gray(),
+            ));
         }
-        
+
         details_lines.push(Line::from(""));
-        details_lines.push(Line::from("───── REPLAY SETTINGS ───────────────────────────────".cyan()));
+        details_lines.push(Line::from(
+            "───── REPLAY SETTINGS ───────────────────────────────".cyan(),
+        ));
         details_lines.push(Line::from(vec![
             Span::raw("Speed Multiplier: ").cyan(),
             Span::raw(format!("{:.4}x", app.speed)).bold().green(),
@@ -706,8 +830,10 @@ fn draw_dashboard(f: &mut ratatui::Frame, app: &TuiApp) {
             Span::raw(" to change)").yellow(),
         ]));
     }
-    
-    let details = Paragraph::new(details_lines).block(details_block).wrap(Wrap { trim: true });
+
+    let details = Paragraph::new(details_lines)
+        .block(details_block)
+        .wrap(Wrap { trim: true });
     f.render_widget(details, main_chunks[1]);
 
     let status_block = Block::default()
@@ -721,7 +847,7 @@ fn draw_dashboard(f: &mut ratatui::Frame, app: &TuiApp) {
         .title(" Controls / Keybinds ".bold().cyan())
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Cyan));
-    
+
     let help_line = Line::from(vec![
         Span::raw(" Navigate: ").cyan().bold(),
         Span::raw("[▲/▼]").yellow().bold(),
@@ -743,17 +869,25 @@ fn draw_dashboard(f: &mut ratatui::Frame, app: &TuiApp) {
     f.render_widget(help, chunks[3]);
 
     if app.show_delay_input || app.show_speed_input {
-        let popup_title = if app.show_delay_input { " Set Timeline Delay (ms) " } else { " Set Playback Speed (multiplier) " };
-        let popup_text = format!("Current input: {}\n\nPress [Enter] to Save | [Esc] to Cancel", app.input_value);
-        
+        let popup_title = if app.show_delay_input {
+            " Set Timeline Delay (ms) "
+        } else {
+            " Set Playback Speed (multiplier) "
+        };
+        let popup_text = format!(
+            "Current input: {}\n\nPress [Enter] to Save | [Esc] to Cancel",
+            app.input_value
+        );
+
         let area = centered_rect(60, 20, f.area());
         f.render_widget(ratatui::widgets::Clear, area);
-        
+
         let popup = Paragraph::new(popup_text)
-            .block(Block::default()
-                .title(popup_title.bold().yellow())
-                .borders(Borders::ALL)
-                .border_style(Style::default().fg(Color::Yellow))
+            .block(
+                Block::default()
+                    .title(popup_title.bold().yellow())
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(Color::Yellow)),
             )
             .alignment(ratatui::layout::Alignment::Center);
         f.render_widget(popup, area);
@@ -762,13 +896,17 @@ fn draw_dashboard(f: &mut ratatui::Frame, app: &TuiApp) {
     if let AppState::InputMacroName = app.state {
         let area = centered_rect(60, 20, f.area());
         f.render_widget(ratatui::widgets::Clear, area);
-        
-        let popup_text = format!("Enter macro name: {}\n\n(Press [Enter] to Start Countdown | [Esc] to Cancel)", app.input_value);
+
+        let popup_text = format!(
+            "Enter macro name: {}\n\n(Press [Enter] to Start Countdown | [Esc] to Cancel)",
+            app.input_value
+        );
         let popup = Paragraph::new(popup_text)
-            .block(Block::default()
-                .title(" Record New Macro: Name Input ".bold().yellow())
-                .borders(Borders::ALL)
-                .border_style(Style::default().fg(Color::Yellow))
+            .block(
+                Block::default()
+                    .title(" Record New Macro: Name Input ".bold().yellow())
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(Color::Yellow)),
             )
             .alignment(ratatui::layout::Alignment::Center);
         f.render_widget(popup, area);
@@ -837,7 +975,14 @@ fn draw_recording_screen(f: &mut ratatui::Frame, elapsed: Duration, count: usize
     f.render_widget(paragraph, area);
 }
 
-fn draw_playback_screen(f: &mut ratatui::Frame, elapsed: Duration, current: usize, total: usize, name: &str, app: &TuiApp) {
+fn draw_playback_screen(
+    f: &mut ratatui::Frame,
+    elapsed: Duration,
+    current: usize,
+    total: usize,
+    name: &str,
+    app: &TuiApp,
+) {
     let area = centered_rect(70, 45, f.area());
     f.render_widget(ratatui::widgets::Clear, area);
 
@@ -853,7 +998,12 @@ fn draw_playback_screen(f: &mut ratatui::Frame, elapsed: Duration, current: usiz
 
     let gauge = ratatui::widgets::Gauge::default()
         .block(Block::default().borders(Borders::NONE))
-        .gauge_style(Style::default().fg(Color::Green).bg(Color::Rgb(50, 50, 50)).bold())
+        .gauge_style(
+            Style::default()
+                .fg(Color::Green)
+                .bg(Color::Rgb(50, 50, 50))
+                .bold(),
+        )
         .percent(pct)
         .label(format!("{}% ({}/{})", pct, current, total));
 
@@ -874,7 +1024,7 @@ fn draw_playback_screen(f: &mut ratatui::Frame, elapsed: Duration, current: usiz
             Span::raw(format!("{} ms", app.delay_ms)).bold().green(),
         ]),
         Line::from(""),
-        Line::from(""), 
+        Line::from(""),
         Line::from(""),
         Line::from(" Press physical ESC or Q to abort ".red().bold()),
     ];
@@ -899,7 +1049,11 @@ fn draw_playback_screen(f: &mut ratatui::Frame, elapsed: Duration, current: usiz
     f.render_widget(gauge, gauge_area);
 }
 
-fn centered_rect(percent_x: u16, percent_y: u16, r: ratatui::layout::Rect) -> ratatui::layout::Rect {
+fn centered_rect(
+    percent_x: u16,
+    percent_y: u16,
+    r: ratatui::layout::Rect,
+) -> ratatui::layout::Rect {
     let popup_layout = Layout::default()
         .direction(Direction::Vertical)
         .constraints([

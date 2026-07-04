@@ -12,11 +12,21 @@ fn main() {
     let cli = Cli::parse();
 
     match cli.command {
-        Some(Commands::Record { name, no_mouse, no_keyboard }) => {
+        Some(Commands::Record {
+            name,
+            no_mouse,
+            no_keyboard,
+        }) => {
             ui::print_logo();
             record::record_macro(name, no_mouse, no_keyboard);
         }
-        Some(Commands::Play { name, delay, speed, no_mouse, no_keyboard }) => {
+        Some(Commands::Play {
+            name,
+            delay,
+            speed,
+            no_mouse,
+            no_keyboard,
+        }) => {
             ui::print_logo();
             playback::play_macro(name, delay, speed, no_mouse, no_keyboard);
         }

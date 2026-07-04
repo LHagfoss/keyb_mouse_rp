@@ -8,15 +8,22 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, UNIX_EPOCH};
 
-pub fn start_background_recording(no_mouse: bool, no_keyboard: bool) -> Result<(
-    Arc<Mutex<Vec<RecordedEvent>>>,
-    Arc<AtomicBool>,
-    Vec<thread::JoinHandle<()>>
-), String> {
+pub fn start_background_recording(
+    no_mouse: bool,
+    no_keyboard: bool,
+) -> Result<
+    (
+        Arc<Mutex<Vec<RecordedEvent>>>,
+        Arc<AtomicBool>,
+        Vec<thread::JoinHandle<()>>,
+    ),
+    String,
+> {
     let events = Arc::new(Mutex::new(Vec::new()));
 
     let mut devices = Vec::new();
-    let entries = std::fs::read_dir("/dev/input").map_err(|e| format!("Error reading /dev/input: {}", e))?;
+    let entries =
+        std::fs::read_dir("/dev/input").map_err(|e| format!("Error reading /dev/input: {}", e))?;
     let mut permission_denied = false;
 
     for entry in entries {
@@ -64,7 +71,9 @@ pub fn start_background_recording(no_mouse: bool, no_keyboard: bool) -> Result<(
         if permission_denied {
             return Err("Permission denied: Cannot access input devices in /dev/input/. Please run as root or add user to group.".to_string());
         } else {
-            return Err("No compatible keyboard or mouse input devices found in /dev/input/.".to_string());
+            return Err(
+                "No compatible keyboard or mouse input devices found in /dev/input/.".to_string(),
+            );
         }
     }
 
@@ -156,13 +165,20 @@ pub fn record_macro(name: Option<String>, no_mouse: bool, no_keyboard: bool) {
     crate::ui::print_info_box(
         "MACRO RECORDING MODULE",
         &[
-            format!("{}: {}", "Active Devices", handles.len().to_string().cyan().bold()),
+            format!(
+                "{}: {}",
+                "Active Devices",
+                handles.len().to_string().cyan().bold()
+            ),
             "".to_string(),
             format!("{}:", "How to Stop".yellow().bold()),
             "  - Focus this terminal window.".to_string(),
             "  - Press ESCAPE or Q inside the terminal window to stop.".to_string(),
             "".to_string(),
-            format!("{}: Initializing recording input listener...", "STATUS".blue().bold()),
+            format!(
+                "{}: Initializing recording input listener...",
+                "STATUS".blue().bold()
+            ),
         ],
     );
 
@@ -171,7 +187,11 @@ pub fn record_macro(name: Option<String>, no_mouse: bool, no_keyboard: bool) {
         thread::sleep(Duration::from_secs(1));
     }
     println!();
-    println!("  [{}] {}", "STATUS".green().bold(), "Recording has started! Type or move mouse now.".bright_green());
+    println!(
+        "  [{}] {}",
+        "STATUS".green().bold(),
+        "Recording has started! Type or move mouse now.".bright_green()
+    );
 
     crossterm::terminal::enable_raw_mode().unwrap();
 
