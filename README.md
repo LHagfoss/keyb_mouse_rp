@@ -1,5 +1,7 @@
 # kmrp
 
+<img src="./image.png" alt="kmrp" />
+
 ## what is kmrp?
 
 kmrp is a shortened name for Keyboard Mouse Record Play
