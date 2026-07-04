@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, UNIX_EPOCH};
 
-pub fn record_macro(no_mouse: bool, no_keyboard: bool) {
+pub fn record_macro(name: Option<String>, no_mouse: bool, no_keyboard: bool) {
     let events = Arc::new(Mutex::new(Vec::new()));
 
     let mut devices = Vec::new();
@@ -101,7 +101,6 @@ pub fn record_macro(no_mouse: bool, no_keyboard: bool) {
     println!();
     println!("  [{}] {}", "STATUS".green().bold(), "Recording has started! Type or move mouse now.".bright_green());
 
-
     let recording = Arc::new(AtomicBool::new(true));
     let mut handles = Vec::new();
 
@@ -119,6 +118,7 @@ pub fn record_macro(no_mouse: bool, no_keyboard: bool) {
                         let mut events_lock = events_clone.lock().unwrap();
 
                         for event in events_iter {
+                            // Event type 1 is EV_KEY. Button codes in mouse range (272 to 287 or BTN_MOUSE = 0x110)
                             let is_mouse = event.event_type().0 == 2
                                 || (event.event_type().0 == 1
                                     && event.code() >= 272
@@ -181,7 +181,16 @@ pub fn record_macro(no_mouse: bool, no_keyboard: bool) {
 
     trim_exit_events(&mut events_lock);
 
-    save_and_exit(&events_lock);
+    let name_str = match name {
+        Some(n) => n,
+        None => {
+            let datetime = chrono::Local::now().format("%Y%m%d_%H%M%S").to_string();
+            format!("macro_{}", datetime)
+        }
+    };
+    let save_path = crate::storage::get_macro_path(&name_str);
+
+    save_and_exit(&events_lock, &save_path);
 }
 
 fn trim_exit_events(events: &mut Vec<RecordedEvent>) {
@@ -198,7 +207,7 @@ fn trim_exit_events(events: &mut Vec<RecordedEvent>) {
     }
 }
 
-fn save_and_exit(events_lock: &Vec<RecordedEvent>) {
+fn save_and_exit(events_lock: &Vec<RecordedEvent>, path: &std::path::Path) {
     use colored::Colorize;
     let json = match serde_json::to_string_pretty(events_lock) {
         Ok(j) => j,
@@ -208,7 +217,7 @@ fn save_and_exit(events_lock: &Vec<RecordedEvent>) {
         }
     };
 
-    let mut file = File::create("macro.json").expect("Unable to create macro.json");
+    let mut file = File::create(path).expect(&format!("Unable to create file: {:?}", path));
     file.write_all(json.as_bytes())
         .expect("Unable to write data");
 
@@ -217,6 +226,6 @@ fn save_and_exit(events_lock: &Vec<RecordedEvent>) {
         "  [{}] Saved {} events to {} successfully!",
         "SUCCESS".green().bold(),
         events_lock.len().to_string().cyan().bold(),
-        "macro.json".yellow().bold()
+        path.to_string_lossy().yellow().bold()
     );
 }

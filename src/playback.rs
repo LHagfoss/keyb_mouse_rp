@@ -17,12 +17,30 @@ pub struct RecordedEvent {
     pub value: i32,
 }
 
-pub fn play_macro(delay_ms: i64, speed: f64, no_mouse: bool, no_keyboard: bool) {
+pub fn play_macro(name: Option<String>, delay_ms: i64, speed: f64, no_mouse: bool, no_keyboard: bool) {
     use colored::Colorize;
-    let mut file = match File::open("macro.json") {
+    
+    let name_str = match name {
+        Some(n) => n,
+        None => {
+            match crate::storage::get_latest_macro() {
+                Some(latest) => {
+                    println!("  [{}] Playing most recent macro: {}", "INFO".blue().bold(), latest.yellow().bold());
+                    latest
+                }
+                None => {
+                    eprintln!("{} No saved macros found. Run 'kmrp record' first.", "Error:".red().bold());
+                    return;
+                }
+            }
+        }
+    };
+
+    let path = crate::storage::get_macro_path(&name_str);
+    let mut file = match File::open(&path) {
         Ok(f) => f,
         Err(_) => {
-            eprintln!("{} macro.json not found. Run 'kmrp record' first.", "Error:".red().bold());
+            eprintln!("{} File {:?} not found.", "Error:".red().bold(), path);
             return;
         }
     };
@@ -30,14 +48,14 @@ pub fn play_macro(delay_ms: i64, speed: f64, no_mouse: bool, no_keyboard: bool) 
     let mut contents = String::new();
 
     if file.read_to_string(&mut contents).is_err() {
-        eprintln!("{} Failed to read macro.json", "Error:".red().bold());
+        eprintln!("{} Failed to read file {:?}", "Error:".red().bold(), path);
         return;
     }
 
     let mut events: Vec<RecordedEvent> = match serde_json::from_str(&contents) {
         Ok(events) => events,
         Err(e) => {
-            eprintln!("{} Failed to parse macro.json: {}", "Error:".red().bold(), e);
+            eprintln!("{} Failed to parse file {:?}: {}", "Error:".red().bold(), path, e);
             return;
         }
     };
@@ -71,7 +89,7 @@ pub fn play_macro(delay_ms: i64, speed: f64, no_mouse: bool, no_keyboard: bool) 
     let events = filtered_events;
 
     if events.is_empty() {
-        println!("No events left to play back after applying filters.");
+        println!("{}", "No events left to play back after filtering.".yellow());
         return;
     }
 
@@ -97,10 +115,14 @@ pub fn play_macro(delay_ms: i64, speed: f64, no_mouse: bool, no_keyboard: bool) 
     let mut builder = match VirtualDevice::builder() {
         Ok(b) => b.name("Virtual Macro Device"),
         Err(e) => {
-            eprintln!("Error: Cannot create VirtualDevice builder: {:?}", e);
+            eprintln!(
+                "{} Cannot create VirtualDevice builder: {:?}",
+                "Error:".red().bold(),
+                e
+            );
             if e.kind() == std::io::ErrorKind::PermissionDenied {
                 eprintln!("Permission denied accessing /dev/uinput.");
-                eprintln!("Please run this tool with sudo.");
+                eprintln!("Please run this tool with sudo or configure udev rules.");
             }
             return;
         }
@@ -110,7 +132,7 @@ pub fn play_macro(delay_ms: i64, speed: f64, no_mouse: bool, no_keyboard: bool) 
         builder = match builder.with_keys(&keys) {
             Ok(b) => b,
             Err(e) => {
-                eprintln!("Error configuring virtual keys: {:?}", e);
+                eprintln!("{} Configuring virtual keys: {:?}", "Error:".red().bold(), e);
                 return;
             }
         };
@@ -120,7 +142,11 @@ pub fn play_macro(delay_ms: i64, speed: f64, no_mouse: bool, no_keyboard: bool) 
         builder = match builder.with_relative_axes(&rel_axes) {
             Ok(b) => b,
             Err(e) => {
-                eprintln!("Error configuring virtual relative axes: {:?}", e);
+                eprintln!(
+                    "{} Configuring virtual relative axes: {:?}",
+                    "Error:".red().bold(),
+                    e
+                );
                 return;
             }
         };
@@ -129,7 +155,7 @@ pub fn play_macro(delay_ms: i64, speed: f64, no_mouse: bool, no_keyboard: bool) 
     let mut virtual_device = match builder.build() {
         Ok(d) => d,
         Err(e) => {
-            eprintln!("Error building VirtualDevice: {:?}", e);
+            eprintln!("{} Building VirtualDevice: {:?}", "Error:".red().bold(), e);
             if e.kind() == std::io::ErrorKind::PermissionDenied {
                 eprintln!("Permission denied accessing /dev/uinput. Please run with sudo.");
             }
@@ -140,7 +166,6 @@ pub fn play_macro(delay_ms: i64, speed: f64, no_mouse: bool, no_keyboard: bool) 
     let aborted = Arc::new(AtomicBool::new(false));
     let aborted_clone = Arc::clone(&aborted);
 
-    // Spawn a thread to listen to physical keyboards for the panic button (ESC or Q)
     thread::spawn(move || {
         let mut devices = Vec::new();
         if let Ok(entries) = std::fs::read_dir("/dev/input") {
@@ -154,7 +179,6 @@ pub fn play_macro(delay_ms: i64, speed: f64, no_mouse: bool, no_keyboard: bool) 
                     {
                         if let Ok(device) = Device::open(&path) {
                             let name = device.name().unwrap_or("");
-                            // Skip our own virtual device to prevent self-triggering
                             if name == "Virtual Macro Device" {
                                 continue;
                             }
@@ -180,8 +204,6 @@ pub fn play_macro(delay_ms: i64, speed: f64, no_mouse: bool, no_keyboard: bool) 
                     if let Ok(events_iter) = dev.fetch_events() {
                         for ev in events_iter {
                             if ev.event_type().0 == 1 {
-                                // EV_KEY
-                                // Code 1 is KEY_ESC, Code 16 is KEY_Q
                                 if ev.value() == 1 && (ev.code() == 1 || ev.code() == 16) {
                                     aborted_inner.store(true, Ordering::SeqCst);
                                     break;
@@ -199,9 +221,10 @@ pub fn play_macro(delay_ms: i64, speed: f64, no_mouse: bool, no_keyboard: bool) 
     crate::ui::print_info_box(
         "MACRO PLAYBACK MODULE",
         &[
-            format!("{}: {}", "Replaying Events".green().bold(), events.len().to_string().cyan().bold()),
-            format!("{}: {} ms", "Playback Delay".green().bold(), delay_ms.to_string().cyan().bold()),
-            format!("{}: {}x", "Playback Speed".green().bold(), speed.to_string().cyan().bold()),
+            format!("{}: {}", "Macro File".green().bold(), path.to_string_lossy().yellow().bold()),
+            format!("{}: {}", "Total Events".green().bold(), events.len().to_string().cyan().bold()),
+            format!("{}: {}x", "Speed Scale".green().bold(), speed.to_string().cyan().bold()),
+            format!("{}: {}ms", "Delay Shift".green().bold(), delay_ms.to_string().cyan().bold()),
             "".to_string(),
             format!("{}:", "How to Abort".yellow().bold()),
             "  - Press physical ESCAPE or Q globally at any time.".to_string(),
@@ -228,7 +251,6 @@ pub fn play_macro(delay_ms: i64, speed: f64, no_mouse: bool, no_keyboard: bool) 
             break;
         }
 
-        // Calculate raw target offset in microseconds, apply speed multiplier, then shift by delay_us
         let base_offset_us = (event.time_us as i64 - time_us_start as i64) as f64 / speed;
         let target_time_us = (base_offset_us + delay_us as f64).max(0.0) as u64;
 
