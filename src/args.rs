@@ -5,7 +5,7 @@ use clap::{Parser, Subcommand};
 #[command(about = "A simple keyboard and mouse macro recorder/player", long_about = None)]
 pub struct Cli {
     #[command(subcommand)]
-    pub command: Commands,
+    pub command: Option<Commands>,
 }
 
 #[derive(Subcommand)]
