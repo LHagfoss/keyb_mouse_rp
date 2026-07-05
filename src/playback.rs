@@ -1,6 +1,3 @@
-use evdev::{
-    AttributeSet, Device, EventType, InputEvent, KeyCode, RelativeAxisCode, uinput::VirtualDevice,
-};
 use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::Read;
@@ -8,6 +5,14 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::thread;
 use std::time::Duration;
+
+#[cfg(target_os = "linux")]
+use evdev::{
+    AttributeSet, Device, EventType, InputEvent, KeyCode, RelativeAxisCode, uinput::VirtualDevice,
+};
+
+#[cfg(target_os = "macos")]
+use crate::record::{is_trusted, evdev_to_rdev_key};
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct RecordedEvent {
@@ -17,6 +22,88 @@ pub struct RecordedEvent {
     pub value: i32,
 }
 
+#[cfg(target_os = "macos")]
+fn simulate_relative_mouse_move(dx: i32, dy: i32) {
+    use core_graphics::event::{CGEvent, CGEventTapLocation, CGEventType, CGMouseButton};
+    use core_graphics::event_source::{CGEventSource, CGEventSourceStateID};
+
+    let source1 = CGEventSource::new(CGEventSourceStateID::CombinedSessionState);
+    let source2 = CGEventSource::new(CGEventSourceStateID::CombinedSessionState);
+
+    if let (Ok(s1), Ok(s2)) = (source1, source2) {
+        if let Ok(event) = CGEvent::new(s1) {
+            let mut loc = event.location();
+            loc.x += dx as f64;
+            loc.y += dy as f64;
+            if let Ok(move_event) = CGEvent::new_mouse_event(
+                s2,
+                CGEventType::MouseMoved,
+                loc,
+                CGMouseButton::Left,
+            ) {
+                move_event.post(CGEventTapLocation::HID);
+            }
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn simulate_event_macos(event: &RecordedEvent) {
+    match event.event_type {
+        1 => {
+            let is_mouse = event.code >= 272 && event.code <= 287;
+            if is_mouse {
+                let button = match event.code {
+                    272 => rdev::Button::Left,
+                    273 => rdev::Button::Right,
+                    274 => rdev::Button::Middle,
+                    c => rdev::Button::Unknown((c - 272) as u8),
+                };
+                let event_type = if event.value == 1 {
+                    rdev::EventType::ButtonPress(button)
+                } else {
+                    rdev::EventType::ButtonRelease(button)
+                };
+                let _ = rdev::simulate(&event_type);
+            } else {
+                if let Some(key) = evdev_to_rdev_key(event.code) {
+                    let event_type = if event.value == 1 || event.value == 2 {
+                        rdev::EventType::KeyPress(key)
+                    } else {
+                        rdev::EventType::KeyRelease(key)
+                    };
+                    let _ = rdev::simulate(&event_type);
+                }
+            }
+        }
+        2 => {
+            match event.code {
+                0 => {
+                    simulate_relative_mouse_move(event.value, 0);
+                }
+                1 => {
+                    simulate_relative_mouse_move(0, event.value);
+                }
+                8 => {
+                    let _ = rdev::simulate(&rdev::EventType::Wheel {
+                        delta_x: 0,
+                        delta_y: event.value as i64,
+                    });
+                }
+                6 => {
+                    let _ = rdev::simulate(&rdev::EventType::Wheel {
+                        delta_x: event.value as i64,
+                        delta_y: 0,
+                    });
+                }
+                _ => {}
+            }
+        }
+        _ => {}
+    }
+}
+
+#[cfg(target_os = "linux")]
 pub fn start_background_playback(
     name_str: String,
     delay_ms: i64,
@@ -233,6 +320,141 @@ pub fn start_background_playback(
     ))
 }
 
+#[cfg(target_os = "macos")]
+pub fn start_background_playback(
+    name_str: String,
+    delay_ms: i64,
+    speed: f64,
+    no_mouse: bool,
+    no_keyboard: bool,
+) -> Result<
+    (
+        Arc<AtomicBool>,  // playing flag
+        Arc<AtomicUsize>, // current event index
+        Arc<AtomicBool>,  // abort flag
+        usize,            // total events
+        thread::JoinHandle<()>,
+    ),
+    String,
+> {
+    if !is_trusted() {
+        return Err("Permission denied: Accessibility permissions are required to simulate inputs. Please go to System Settings > Privacy & Security > Accessibility and add/enable your Terminal or application.".to_string());
+    }
+
+    let path = crate::storage::get_macro_path(&name_str);
+    let mut file = File::open(&path).map_err(|_| format!("File {:?} not found.", path))?;
+    let mut contents = String::new();
+    file.read_to_string(&mut contents)
+        .map_err(|e| format!("Failed to read file: {}", e))?;
+
+    let mut events: Vec<RecordedEvent> = serde_json::from_str(&contents)
+        .map_err(|e| format!("Failed to parse macro file: {}", e))?;
+
+    if events.is_empty() {
+        return Err("Macro contains no events.".to_string());
+    }
+
+    events.sort_by_key(|e| e.time_us);
+
+    let mut filtered_events = Vec::new();
+    for event in events {
+        let is_mouse = event.event_type == 2
+            || (event.event_type == 1 && event.code >= 272 && event.code <= 287);
+        let is_keyboard = event.event_type == 1 && !is_mouse;
+
+        if is_mouse && no_mouse {
+            continue;
+        }
+        if is_keyboard && no_keyboard {
+            continue;
+        }
+        if event.event_type == 0 && no_mouse && no_keyboard {
+            continue;
+        }
+
+        filtered_events.push(event);
+    }
+
+    let events = filtered_events;
+
+    if events.is_empty() {
+        return Err("No events left to play back after filtering.".to_string());
+    }
+
+    let total_events = events.len();
+
+    let playing_flag = Arc::new(AtomicBool::new(true));
+    let current_event = Arc::new(AtomicUsize::new(0));
+    let abort_flag = Arc::new(AtomicBool::new(false));
+
+    let playing_clone = Arc::clone(&playing_flag);
+    let current_clone = Arc::clone(&current_event);
+    let abort_clone_listener = Arc::clone(&abort_flag);
+    let abort_clone_playback = Arc::clone(&abort_flag);
+
+    // Spawn a thread to listen to physical keyboard for the panic button (ESC or Q)
+    thread::spawn(move || {
+        let callback = move |event: rdev::Event| {
+            if let rdev::EventType::KeyPress(key) = event.event_type {
+                if key == rdev::Key::Escape || key == rdev::Key::KeyQ {
+                    abort_clone_listener.store(true, Ordering::SeqCst);
+                }
+            }
+        };
+        let _ = rdev::listen(callback);
+    });
+
+    let playback_handle = thread::spawn(move || {
+        let playback_start = std::time::Instant::now();
+        let time_us_start = events[0].time_us;
+        let delay_us = delay_ms * 1000;
+
+        for (idx, event) in events.into_iter().enumerate() {
+            if abort_clone_playback.load(Ordering::SeqCst) {
+                break;
+            }
+
+            let base_offset_us = (event.time_us as i64 - time_us_start as i64) as f64 / speed;
+            let target_time_us = (base_offset_us + delay_us as f64).max(0.0) as u64;
+
+            loop {
+                if abort_clone_playback.load(Ordering::SeqCst) {
+                    break;
+                }
+                let elapsed_us = playback_start.elapsed().as_micros() as u64;
+                if elapsed_us >= target_time_us {
+                    break;
+                }
+                let remaining_us = target_time_us - elapsed_us;
+                if remaining_us > 3000 {
+                    thread::sleep(Duration::from_micros(remaining_us - 1000));
+                } else {
+                    std::hint::spin_loop();
+                }
+            }
+
+            if abort_clone_playback.load(Ordering::SeqCst) {
+                break;
+            }
+
+            simulate_event_macos(&event);
+
+            current_clone.store(idx + 1, Ordering::SeqCst);
+        }
+
+        playing_clone.store(false, Ordering::SeqCst);
+    });
+
+    Ok((
+        playing_flag,
+        current_event,
+        abort_flag,
+        total_events,
+        playback_handle,
+    ))
+}
+
+#[cfg(target_os = "linux")]
 pub fn play_macro(
     name: Option<String>,
     delay_ms: i64,
@@ -537,6 +759,207 @@ pub fn play_macro(
         if let Err(e) = virtual_device.emit(&[ev]) {
             eprintln!("Failed to simulate event: {:?}", e);
         }
+    }
+
+    println!();
+    println!("  [{}] Playback finished.", "SUCCESS".green().bold());
+}
+
+#[cfg(target_os = "macos")]
+pub fn play_macro(
+    name: Option<String>,
+    delay_ms: i64,
+    speed: f64,
+    no_mouse: bool,
+    no_keyboard: bool,
+) {
+    use colored::Colorize;
+
+    if !is_trusted() {
+        eprintln!("{}", "Error: Permission Denied".red().bold());
+        eprintln!("Accessibility permissions are required to simulate inputs.");
+        eprintln!("Please go to System Settings > Privacy & Security > Accessibility");
+        eprintln!("and ensure your Terminal (e.g. Terminal, iTerm2, Alacritty) is allowed.");
+        return;
+    }
+
+    let name_str = match name {
+        Some(n) => n,
+        None => match crate::storage::get_latest_macro() {
+            Some(latest) => {
+                println!(
+                    "  [{}] Playing most recent macro: {}",
+                    "INFO".blue().bold(),
+                    latest.yellow().bold()
+                );
+                latest
+            }
+            None => {
+                eprintln!(
+                    "{} No saved macros found. Run 'kmrp record' first.",
+                    "Error:".red().bold()
+                );
+                return;
+            }
+        },
+    };
+
+    let path = crate::storage::get_macro_path(&name_str);
+    let mut file = match File::open(&path) {
+        Ok(f) => f,
+        Err(_) => {
+            eprintln!("{} File {:?} not found.", "Error:".red().bold(), path);
+            return;
+        }
+    };
+
+    let mut contents = String::new();
+
+    if file.read_to_string(&mut contents).is_err() {
+        eprintln!("{} Failed to read file {:?}", "Error:".red().bold(), path);
+        return;
+    }
+
+    let mut events: Vec<RecordedEvent> = match serde_json::from_str(&contents) {
+        Ok(events) => events,
+        Err(e) => {
+            eprintln!(
+                "{} Failed to parse file {:?}: {}",
+                "Error:".red().bold(),
+                path,
+                e
+            );
+            return;
+        }
+    };
+
+    if events.is_empty() {
+        println!("{}", "No events to play back.".yellow());
+        return;
+    }
+
+    events.sort_by_key(|e| e.time_us);
+
+    let mut filtered_events = Vec::new();
+    for event in events {
+        let is_mouse = event.event_type == 2
+            || (event.event_type == 1 && event.code >= 272 && event.code <= 287);
+        let is_keyboard = event.event_type == 1 && !is_mouse;
+
+        if is_mouse && no_mouse {
+            continue;
+        }
+        if is_keyboard && no_keyboard {
+            continue;
+        }
+        if event.event_type == 0 && no_mouse && no_keyboard {
+            continue;
+        }
+
+        filtered_events.push(event);
+    }
+
+    let events = filtered_events;
+
+    if events.is_empty() {
+        println!(
+            "{}",
+            "No events left to play back after filtering.".yellow()
+        );
+        return;
+    }
+
+    let aborted = Arc::new(AtomicBool::new(false));
+    let aborted_clone = Arc::clone(&aborted);
+
+    thread::spawn(move || {
+        let callback = move |event: rdev::Event| {
+            if let rdev::EventType::KeyPress(key) = event.event_type {
+                if key == rdev::Key::Escape || key == rdev::Key::KeyQ {
+                    aborted_clone.store(true, Ordering::SeqCst);
+                }
+            }
+        };
+        let _ = rdev::listen(callback);
+    });
+
+    crate::ui::print_info_box(
+        "MACRO PLAYBACK MODULE",
+        &[
+            format!(
+                "{}: {}",
+                "Macro File",
+                path.to_string_lossy().yellow().bold()
+            ),
+            format!(
+                "{}: {}",
+                "Total Events",
+                events.len().to_string().cyan().bold()
+            ),
+            format!("{}: {}x", "Speed Scale", speed.to_string().cyan().bold()),
+            format!(
+                "{}: {}ms",
+                "Delay Shift",
+                delay_ms.to_string().cyan().bold()
+            ),
+            "".to_string(),
+            format!("{}:", "How to Abort".yellow().bold()),
+            "  - Press physical ESCAPE or Q globally at any time.".to_string(),
+            "".to_string(),
+            format!(
+                "{}: Initializing virtual output...",
+                "STATUS".blue().bold()
+            ),
+        ],
+    );
+
+    for i in (1..=3).rev() {
+        println!("  [{}] Starting in {}s...", "COUNTDOWN".magenta().bold(), i);
+        thread::sleep(Duration::from_secs(1));
+    }
+    println!();
+    println!(
+        "  [{}] {}",
+        "STATUS".green().bold(),
+        "Playing macro events...".bright_green()
+    );
+    thread::sleep(Duration::from_millis(500));
+
+    let playback_start = std::time::Instant::now();
+    let time_us_start = events[0].time_us;
+    let delay_us = delay_ms * 1000;
+
+    for event in events {
+        if aborted.load(Ordering::SeqCst) {
+            println!("\n  [{}] Playback aborted by user.", "ABORTED".red().bold());
+            break;
+        }
+
+        let base_offset_us = (event.time_us as i64 - time_us_start as i64) as f64 / speed;
+        let target_time_us = (base_offset_us + delay_us as f64).max(0.0) as u64;
+
+        loop {
+            if aborted.load(Ordering::SeqCst) {
+                break;
+            }
+            let elapsed_us = playback_start.elapsed().as_micros() as u64;
+            if elapsed_us >= target_time_us {
+                break;
+            }
+            let remaining_us = target_time_us - elapsed_us;
+            if remaining_us > 3000 {
+                thread::sleep(Duration::from_micros(remaining_us - 1000));
+            } else {
+                std::hint::spin_loop();
+            }
+        }
+
+        if aborted.load(Ordering::SeqCst) {
+            println!("\n  [{}] Playback aborted by user.", "ABORTED".red().bold());
+            break;
+        }
+
+        simulate_event_macos(&event);
     }
 
     println!();

@@ -2,16 +2,21 @@ use colored::Colorize;
 use std::path::PathBuf;
 
 pub fn get_macro_dir() -> PathBuf {
-    // If run under sudo, SUDO_USER contains the original invoking user
-    let user = std::env::var("SUDO_USER")
-        .or_else(|_| std::env::var("USER"))
-        .unwrap_or_else(|_| "lucas".to_string());
-
-    let path = if user == "root" {
-        PathBuf::from("/root/.local/share/kmrp")
+    let mut path = if let Ok(home) = std::env::var("HOME") {
+        PathBuf::from(home)
     } else {
-        PathBuf::from(format!("/home/{}/.local/share/kmrp", user))
+        let user = std::env::var("SUDO_USER")
+            .or_else(|_| std::env::var("USER"))
+            .unwrap_or_else(|_| "lucas".to_string());
+        if cfg!(target_os = "macos") {
+            PathBuf::from(format!("/Users/{}", user))
+        } else if user == "root" {
+            PathBuf::from("/root")
+        } else {
+            PathBuf::from(format!("/home/{}", user))
+        }
     };
+    path.push(".local/share/kmrp");
 
     // Ensure the directory exists
     if !path.exists() {
